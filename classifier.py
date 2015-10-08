@@ -10,7 +10,10 @@ import numpy as np
 from lasagne.objectives import aggregate
 #from lasagne.regularization import regularize_layer_params, l2, l1
 from nolearn.lasagne.handlers import EarlyStopping
+from skimage import data
+from skimage import transform
 
+lambda_regularization = 0.01
 
 class FlipBatchIterator(BatchIterator):
     def transform(self, Xb, yb):
@@ -49,6 +52,37 @@ class FlipBatchIterator(BatchIterator):
         yb = np.append(yb,Y_tmp4)
         yb = np.append(yb,Y_tmp5)
         
+        # small rotation of the images
+        lx = 44
+        pad_lx = 64
+        shift_x = lx/2.
+        shift_y = lx/2.
+        
+        
+        indices = np.random.choice(bs, bs / 2, replace=False)
+        X_tmp6 = Xb[indices, :, ::-1, :]
+        X_tmp6 = X_tmp6.transpose(0,2,3,1)
+        X_tmp6 = np.pad(X_tmp6,((0,0),(10,10),(10,10),(0,0)),'constant', constant_values=(0,0))
+        Y_tmp6 = yb[indices]
+        x_rot = X_tmp6[0]
+        x_rot = x_rot.reshape(1,pad_lx,pad_lx,3)
+        
+        
+        # tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(15))
+        tf_shift = transform.SimilarityTransform(translation=[-shift_x, -shift_y])
+        tf_shift_inv = transform.SimilarityTransform(translation=[shift_x, shift_y])
+        
+        for i in X_tmp6[1::]:
+            tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(np.random.randint(30)-15))
+            xdel = transform.warp(i, (tf_shift + (tf_rotate + tf_shift_inv)).inverse)            
+            xdel=xdel.reshape(1,pad_lx,pad_lx,3)
+            x_rot=np.append(x_rot,xdel,axis=0)
+        
+        x_rot = x_rot[:, 10:54, 10:54, :]
+        x_rot = x_rot.transpose(0,3,1,2)
+        x_rot = x_rot.astype(np.float32)
+        Xb = np.append(Xb,x_rot,axis=0)
+        yb = np.append(yb,Y_tmp6)
         return Xb, yb
 
 
@@ -91,10 +125,10 @@ hyper_parameters = dict(
     update_learning_rate=0.01,
     #update_momentum=0.9,
     update=updates.adagrad,
-    max_epochs=30,
+    max_epochs=100,
     
     # handlers
-    on_epoch_finished = [EarlyStopping(patience=30, criterion='valid_accuracy', criterion_smaller_is_better=False)],
+    on_epoch_finished = [EarlyStopping(patience=40, criterion='valid_accuracy', criterion_smaller_is_better=False)],
     batch_iterator_train=FlipBatchIterator(batch_size=150)
 )
 
@@ -116,6 +150,8 @@ class Classifier(BaseEstimator):
 
     def fit(self, X, y):
         X = self.preprocess(X)
+        
+        
         self.net.fit(X, self.preprocess_y(y))
         return self
 
