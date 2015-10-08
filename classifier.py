@@ -2,11 +2,14 @@ import os
 os.environ["THEANO_FLAGS"] = "device=gpu"
 from sklearn.base import BaseEstimator
 import os
-from lasagne import layers, nonlinearities
+from lasagne import layers, nonlinearities, objectives, updates, init
 from lasagne.updates import nesterov_momentum
-from nolearn.lasagne import NeuralNet
+from nolearn.lasagne import NeuralNet, BatchIterator
 import numpy as np
-
+#from nolearn.lasagne.base import objective
+from lasagne.objectives import aggregate
+#from lasagne.regularization import regularize_layer_params, l2, l1
+from nolearn.lasagne.handlers import EarlyStopping
 
 
 class FlipBatchIterator(BatchIterator):
@@ -15,46 +18,39 @@ class FlipBatchIterator(BatchIterator):
         # Flip half of the images in this batch at random:
         bs = Xb.shape[0]
         indices = np.random.choice(bs, bs / 2, replace=False)
-        NewX
-        Xb[indices] = Xb[indices, :, ::-1, :]
-        bs = Xb.shape[0]
+        #Xb[indices] = Xb[indices, :, ::-1, :]
+        X_tmp1 = Xb[indices, :, ::-1, :]
+        Y_tmp1 = yb[indices]    
         indices = np.random.choice(bs, bs / 2, replace=False)
-        Xb[indices] = Xb[indices, ::-1, :, :]
+        #Xb[indices] = Xb[indices, :, :, ::-1]
+        X_tmp2 = Xb[indices, :, :, ::-1]
+        Y_tmp2 = yb[indices]    
+        indices = np.random.choice(bs, bs / 2, replace=False)
+        X_tmp3 = Xb[indices, :, :, :]
+        Y_tmp3 = yb[indices]    
+        X_tmp3 = X_tmp3.transpose((0,1,3,2)) 
+        indices = np.random.choice(bs, bs / 2, replace=False)
+        X_tmp4 = Xb[indices, :, :, ::-1]
+        Y_tmp4 = yb[indices]    
+        X_tmp4 = X_tmp3.transpose((0,1,3,2)) 
+        indices = np.random.choice(bs, bs / 2, replace=False)
+        X_tmp5 = Xb[indices, :, ::-1, :]
+        Y_tmp5 = yb[indices]    
+        X_tmp5 = X_tmp3.transpose((0,1,3,2))
+        
+        Xb = np.append(Xb,X_tmp1,axis=0)
+        Xb = np.append(Xb,X_tmp2,axis=0)
+        Xb = np.append(Xb,X_tmp3,axis=0)
+        Xb = np.append(Xb,X_tmp4,axis=0)
+        Xb = np.append(Xb,X_tmp5,axis=0)
+        yb = np.append(yb,Y_tmp1)
+        yb = np.append(yb,Y_tmp2)
+        yb = np.append(yb,Y_tmp3)
+        yb = np.append(yb,Y_tmp4)
+        yb = np.append(yb,Y_tmp5)
+        
         return Xb, yb
-class EarlyStopping(object):
 
-    def __init__(self, patience=100, criterion='valid_loss',
-                 criterion_smaller_is_better=True):
-        self.patience = patience
-        self.best_valid = np.inf
-        self.best_valid_epoch = 0
-        self.best_weights = None
-        self.criterion = criterion
-        self.criterion_smaller_is_better = criterion_smaller_is_better
-
-    def __call__(self, nn, train_history):
-        current_valid = train_history[-1][self.criterion]
-        current_epoch = train_history[-1]['epoch']
-        if self.criterion_smaller_is_better:
-            cond = current_valid < self.best_valid
-        else:
-            cond = current_valid > self.best_valid
-        if cond:
-            self.best_valid = current_valid
-            self.best_valid_epoch = current_epoch
-            self.best_weights = nn.get_all_params_values()
-        elif self.best_valid_epoch + self.patience < current_epoch:
-            if nn.verbose:
-                print("Early stopping.")
-                print("Best valid loss was {:.6f} at epoch {}.".format(
-                    self.best_valid, self.best_valid_epoch))
-            nn.load_weights_from(self.best_weights)
-            if nn.verbose:
-                print("Weights set.")
-            raise StopIteration()
-
-    def load_best_weights(self, nn, train_history):
-        nn.load_weights_from(self.best_weights)
 
 def build_model(hyper_parameters):
     net = NeuralNet(
@@ -67,36 +63,39 @@ def build_model(hyper_parameters):
             ('conv3', layers.Conv2DLayer),
             ('pool3', layers.MaxPool2DLayer),
             ('hidden4', layers.DenseLayer),
-            ('dropout4', layers.DropoutLayer),
+            #('dropout4', layers.DropoutLayer),
             ('hidden5', layers.DenseLayer),
             ('dropout5', layers.DropoutLayer),
             ('output', layers.DenseLayer),
             ],
-        input_shape=(None, 3, 64, 64),
+        input_shape=(None, 3, 44, 44),
         use_label_encoder=True,
+        # objective function
+        # objective=objective_with_L2,
         verbose=1,
         **hyper_parameters
         )
     return net
 
 hyper_parameters = dict(
-    conv1_num_filters=32, conv1_filter_size=(5, 5), 
-    pool1_pool_size=(3, 3),
-    conv2_num_filters=16, conv2_filter_size=(3, 3), 
-    pool2_pool_size=(2, 2),
-    conv3_num_filters=32, conv3_filter_size=(2, 2), 
-    pool3_pool_size=(1, 1),
-    hidden4_num_units=500, hidden4_nonlinearity = nonlinearities.leaky_rectify, 
-    #hidden4_regularization = regularization.l2,
-    hidden5_num_units=500, hidden5_nonlinearity = nonlinearities.leaky_rectify,
+    conv1_num_filters=64, conv1_filter_size=(4, 4), pool1_pool_size=(2, 2),
+    conv2_num_filters=128, conv2_filter_size=(4, 4), pool2_pool_size=(2, 2),
+    conv3_num_filters=128, conv3_filter_size=(3, 3), pool3_pool_size=(2, 2),
+    hidden4_num_units=1000, hidden4_nonlinearity = nonlinearities.leaky_rectify,
+    #hidden4_regularization = lasagne.regularization.l2(hidden4),
+    hidden5_num_units=1000, hidden5_nonlinearity = nonlinearities.leaky_rectify,
+    dropout5_p=0.3,
     #hidden5_regularization = regularization.l2,
-    output_num_units=18, output_nonlinearity=nonlinearities.softmax,
-    update_learning_rate=0.04,
-    update_momentum=0.9,
-    max_epochs=20,
+    output_num_units=18, 
+    output_nonlinearity=nonlinearities.softmax,
+    update_learning_rate=0.01,
+    #update_momentum=0.9,
+    update=updates.adagrad,
+    max_epochs=30,
     
     # handlers
-    on_epoch_finished = [EarlyStopping(patience=10, criterion='valid_loss')]
+    on_epoch_finished = [EarlyStopping(patience=30, criterion='valid_accuracy', criterion_smaller_is_better=False)],
+    batch_iterator_train=FlipBatchIterator(batch_size=150)
 )
 
 
@@ -108,6 +107,7 @@ class Classifier(BaseEstimator):
     def preprocess(self, X):
         X = (X / 255.)
         X = X.astype(np.float32)
+        X = X[:, 10:54, 10:54, :]
         X = X.transpose((0, 3, 1, 2))
         return X
     
