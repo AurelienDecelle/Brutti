@@ -6,14 +6,28 @@ from lasagne import layers, nonlinearities, objectives, updates, init
 from lasagne.updates import nesterov_momentum
 from nolearn.lasagne import NeuralNet, BatchIterator
 import numpy as np
-#from nolearn.lasagne.base import objective
+from nolearn.lasagne.base import objective
 from lasagne.objectives import aggregate
-#from lasagne.regularization import regularize_layer_params, l2, l1
+from lasagne.regularization import regularize_layer_params, l2, l1
 from nolearn.lasagne.handlers import EarlyStopping
 from skimage import data
 from skimage import transform
 
-lambda_regularization = 0.01
+lambda_regularization = 1e-6
+
+def objective_with_L2(layers,
+                      loss_function,
+                      target,
+                      aggregate=aggregate,
+                      deterministic=False,
+                      get_output_kw=None):
+    reg = regularize_layer_params([layers["hidden4"], layers["hidden5"]], l2)
+    loss = objective(layers, loss_function, target, aggregate, deterministic, get_output_kw)
+    
+    if deterministic is False:
+        return loss + reg * lambda_regularization
+    else:
+        return loss
 
 class FlipBatchIterator(BatchIterator):
     def transform(self, Xb, yb):
@@ -57,9 +71,7 @@ class FlipBatchIterator(BatchIterator):
         pad_lx = 64
         shift_x = lx/2.
         shift_y = lx/2.
-        tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(15))
-        tf_shift = transform.SimilarityTransform(translation=[-shift_x, -shift_y])
-        tf_shift_inv = transform.SimilarityTransform(translation=[shift_x, shift_y])
+        
         
         indices = np.random.choice(bs, bs / 2, replace=False)
         X_tmp6 = Xb[indices, :, ::-1, :]
@@ -68,7 +80,14 @@ class FlipBatchIterator(BatchIterator):
         Y_tmp6 = yb[indices]
         x_rot = X_tmp6[0]
         x_rot = x_rot.reshape(1,pad_lx,pad_lx,3)
+        
+        
+        # tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(15))
+        tf_shift = transform.SimilarityTransform(translation=[-shift_x, -shift_y])
+        tf_shift_inv = transform.SimilarityTransform(translation=[shift_x, shift_y])
+        
         for i in X_tmp6[1::]:
+            tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(np.random.randint(30)-15))
             xdel = transform.warp(i, (tf_shift + (tf_rotate + tf_shift_inv)).inverse)            
             xdel=xdel.reshape(1,pad_lx,pad_lx,3)
             x_rot=np.append(x_rot,xdel,axis=0)
@@ -92,15 +111,13 @@ def build_model(hyper_parameters):
             ('conv3', layers.Conv2DLayer),
             ('pool3', layers.MaxPool2DLayer),
             ('hidden4', layers.DenseLayer),
-            #('dropout4', layers.DropoutLayer),
+            # ('dropout4', layers.DropoutLayer),
             ('hidden5', layers.DenseLayer),
             ('dropout5', layers.DropoutLayer),
             ('output', layers.DenseLayer),
             ],
         input_shape=(None, 3, 44, 44),
         use_label_encoder=True,
-        # objective function
-        # objective=objective_with_L2,
         verbose=1,
         **hyper_parameters
         )
@@ -110,15 +127,17 @@ hyper_parameters = dict(
     conv1_num_filters=64, conv1_filter_size=(4, 4), pool1_pool_size=(2, 2),
     conv2_num_filters=128, conv2_filter_size=(4, 4), pool2_pool_size=(2, 2),
     conv3_num_filters=128, conv3_filter_size=(3, 3), pool3_pool_size=(2, 2),
-    hidden4_num_units=1000, hidden4_nonlinearity = nonlinearities.leaky_rectify,
+    hidden4_num_units=500, hidden4_nonlinearity = nonlinearities.leaky_rectify,
+    # dropout4_p=0.3,
     #hidden4_regularization = lasagne.regularization.l2(hidden4),
-    hidden5_num_units=1000, hidden5_nonlinearity = nonlinearities.leaky_rectify,
+    hidden5_num_units=500, hidden5_nonlinearity = nonlinearities.leaky_rectify,
     dropout5_p=0.3,
     #hidden5_regularization = regularization.l2,
     output_num_units=18, 
     output_nonlinearity=nonlinearities.softmax,
     update_learning_rate=0.01,
     #update_momentum=0.9,
+    objective=objective_with_L2,
     update=updates.adagrad,
     max_epochs=150,
     
