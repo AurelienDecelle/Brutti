@@ -57,7 +57,9 @@ class FlipBatchIterator(BatchIterator):
         pad_lx = 64
         shift_x = lx/2.
         shift_y = lx/2.
-        
+        tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(15))
+        tf_shift = transform.SimilarityTransform(translation=[-shift_x, -shift_y])
+        tf_shift_inv = transform.SimilarityTransform(translation=[shift_x, shift_y])
         
         indices = np.random.choice(bs, bs / 2, replace=False)
         X_tmp6 = Xb[indices, :, ::-1, :]
@@ -66,14 +68,7 @@ class FlipBatchIterator(BatchIterator):
         Y_tmp6 = yb[indices]
         x_rot = X_tmp6[0]
         x_rot = x_rot.reshape(1,pad_lx,pad_lx,3)
-        
-        
-        # tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(15))
-        tf_shift = transform.SimilarityTransform(translation=[-shift_x, -shift_y])
-        tf_shift_inv = transform.SimilarityTransform(translation=[shift_x, shift_y])
-        
         for i in X_tmp6[1::]:
-            tf_rotate = transform.SimilarityTransform(rotation=np.deg2rad(np.random.randint(30)-15))
             xdel = transform.warp(i, (tf_shift + (tf_rotate + tf_shift_inv)).inverse)            
             xdel=xdel.reshape(1,pad_lx,pad_lx,3)
             x_rot=np.append(x_rot,xdel,axis=0)
@@ -125,7 +120,7 @@ hyper_parameters = dict(
     update_learning_rate=0.01,
     #update_momentum=0.9,
     update=updates.adagrad,
-    max_epochs=100,
+    max_epochs=150,
     
     # handlers
     on_epoch_finished = [EarlyStopping(patience=40, criterion='valid_accuracy', criterion_smaller_is_better=False)],
