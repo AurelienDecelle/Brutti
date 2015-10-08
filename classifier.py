@@ -7,6 +7,20 @@ from lasagne.updates import nesterov_momentum
 from nolearn.lasagne import NeuralNet
 import numpy as np
 
+
+
+class FlipBatchIterator(BatchIterator):
+    def transform(self, Xb, yb):
+        Xb, yb = super(FlipBatchIterator, self).transform(Xb, yb)
+        # Flip half of the images in this batch at random:
+        bs = Xb.shape[0]
+        indices = np.random.choice(bs, bs / 2, replace=False)
+        NewX
+        Xb[indices] = Xb[indices, :, ::-1, :]
+        bs = Xb.shape[0]
+        indices = np.random.choice(bs, bs / 2, replace=False)
+        Xb[indices] = Xb[indices, ::-1, :, :]
+        return Xb, yb
 class EarlyStopping(object):
 
     def __init__(self, patience=100, criterion='valid_loss',
